@@ -149,7 +149,7 @@ function App() {
   const [inputLanguage, setInputLanguage] = useState('plaintext')
   const [outputLanguage, setOutputLanguage] = useState('plaintext')
   const [stepErrors, setStepErrors] = useState<Record<string, string>>({})
-  const [runScope, setRunScope] = useState<RunScope>('all')
+  const [runScope] = useState<RunScope>('all')
   const [scopeStepId, setScopeStepId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{
     x: number
@@ -160,6 +160,7 @@ function App() {
   const [isLibraryExpanded, setIsLibraryExpanded] = useState(true)
   const [isDraggingOverSidebar, setIsDraggingOverSidebar] = useState(false)
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
+  const [editingTitleStepId, setEditingTitleStepId] = useState<string | null>(null)
 
   const activeGroup = stepGroups.find((group) => group.id === selectedGroupId) ?? null
   const activeSteps = activeGroup?.steps ?? []
@@ -379,7 +380,7 @@ function App() {
         try {
           const fn = new Function('input', 'helpers', step.code) as (
             input: string,
-            helpers: typeof helpers,
+            helpers: Record<string, (value: string) => string>,
           ) => unknown
           const result = fn(current, helpers)
           current = String(result ?? '')
@@ -443,7 +444,8 @@ function App() {
         className={`sidebar ${isDraggingOverSidebar ? 'drag-over' : ''}`}
         onDragOver={(event) => {
           event.preventDefault()
-          event.dataTransfer.dropEffect = 'copy'
+          const isReorder = event.dataTransfer.types.includes('text/plain')
+          event.dataTransfer.dropEffect = isReorder ? 'move' : 'copy'
           if (!isDraggingOverSidebar) setIsDraggingOverSidebar(true)
         }}
         onDragLeave={(event) => {
@@ -452,12 +454,20 @@ function App() {
             setIsDraggingOverSidebar(false)
           }
         }}
+        onDragEnd={() => setIsDraggingOverSidebar(false)}
         onDrop={(event) => {
           event.preventDefault()
           setIsDraggingOverSidebar(false)
-          // Don't handle drop if it was already handled by a child
-          if (event.defaultPrevented) return
           
+          const textData = event.dataTransfer.getData('text/plain')
+          if (textData && textData.startsWith('REORDER:')) {
+             const fromIndex = parseInt(textData.replace('REORDER:', ''), 10)
+             if (!isNaN(fromIndex)) {
+                 moveStep(fromIndex, activeSteps.length - 1)
+             }
+             return
+          }
+
           const data = event.dataTransfer.getData('application/json')
           if (!data) return
           try {
@@ -516,7 +526,7 @@ function App() {
                 event.dataTransfer.dropEffect = 'move'
                 setDropTargetIndex(index)
               }}
-              onDragLeave={(event) => {
+              onDragLeave={() => {
                  if (dropTargetIndex === index) {
                    setDropTargetIndex(null)
                  }
@@ -570,7 +580,26 @@ function App() {
               tabIndex={0}
             >
               <div className="step-title">
-                <span>{step.title || `title ${index + 1}`}</span>
+                {editingTitleStepId === step.id ? (
+                  <input
+                    autoFocus
+                    className="step-title-input"
+                    value={step.title}
+                    onChange={(e) => updateStep(step.id, { title: e.target.value })}
+                    onBlur={() => setEditingTitleStepId(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setEditingTitleStepId(null)
+                      }
+                      e.stopPropagation()
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span onDoubleClick={() => setEditingTitleStepId(step.id)}>
+                    {step.title || `title ${index + 1}`}
+                  </span>
+                )}
                 {step.muted && <span className="badge">Muted</span>}
               </div>
               <div className="step-actions">
@@ -722,7 +751,7 @@ function App() {
                 </div>
                 <div className="io-editor">
                   <Editor
-                    height="240px"
+                    height="100%"
                     language={inputLanguage}
                     theme="vs-light"
                     beforeMount={handleEditorBeforeMount}
@@ -759,7 +788,7 @@ function App() {
                 </div>
                 <div className="io-editor">
                   <Editor
-                    height="240px"
+                    height="100%"
                     language={outputLanguage}
                     theme="vs-light"
                     beforeMount={handleEditorBeforeMount}

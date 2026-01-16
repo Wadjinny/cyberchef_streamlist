@@ -109,6 +109,19 @@
   font-size: 14px;
 }
 
+.step-title-input {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  border: 1px solid #4f46e5;
+  border-radius: 4px;
+  padding: 0 4px;
+  margin: -1px -5px;
+  background: white;
+  width: 100%;
+  color: inherit;
+}
+
 .badge {
   font-size: 11px;
   padding: 2px 6px;
