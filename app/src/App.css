@@ -20,8 +20,6 @@
 
 .sidebar.drag-over {
   background: #f0fdf4;
-  border-color: #22c55e;
-  border-style: dashed;
 }
 
 .sidebar.library {
@@ -250,7 +248,7 @@
 .code-editor {
   border-radius: 10px;
   border: 1px solid #d7dce3;
-  overflow: hidden;
+  /* overflow: hidden; */
   background: #f8f9fb;
 }
 

@@ -1,46 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import type { Monaco } from '@monaco-editor/react'
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import type {
+  DragStartEvent,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import './App.css'
+import { StepItem } from './components/StepItem'
+import { SortableStepItem } from './components/SortableStepItem'
+import { Droppable } from './components/Droppable'
+import type { Step, StepGroup, LibraryStep, StoredState, RunScope } from './types'
+import { AnimatePresence } from 'framer-motion'
 
-type Step = {
-  id: string
-  title: string
-  code: string
-  muted: boolean
-  createdAt: number
-  updatedAt: number
-}
-
-type StepGroup = {
-  id: string
-  title: string
-  steps: Step[]
-  createdAt: number
-  updatedAt: number
-}
-
-type LibraryStep = {
-  id: string
-  title: string
-  code: string
-  createdAt: number
-  updatedAt: number
-}
-
-type StoredState = {
-  version: 1
-  stepGroups: StepGroup[]
-  selectedGroupId: string | null
-  selectedStepId: string | null
-  librarySteps: LibraryStep[]
-}
-
-type RunScope = 'all' | 'from' | 'to'
-
+const BUBBLE_DELAY = 20
 const STORAGE_KEY = 'text-transformer-steps-v1'
 const STORAGE_VERSION = 1
-const DEFAULT_CODE = `// input is a string\nreturn input`
+const DEFAULT_CODE = `return input`
 const HELPERS_LIB = `type Helpers = {
   upper(value: string): string
   lower(value: string): string
@@ -161,6 +150,42 @@ function App() {
   const [isDraggingOverSidebar, setIsDraggingOverSidebar] = useState(false)
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
   const [editingTitleStepId, setEditingTitleStepId] = useState<string | null>(null)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  )
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && over.id === 'library-droppable' && activeGroup) {
+      const stepToSave = activeSteps.find((step) => step.id === active.id)
+      if (stepToSave) {
+        saveStepToLibrary(stepToSave)
+      }
+    } else if (over && active.id !== over.id && activeGroup) {
+      const oldIndex = activeSteps.findIndex((step) => step.id === active.id)
+      const newIndex = activeSteps.findIndex((step) => step.id === over.id)
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        moveStep(oldIndex, newIndex)
+      }
+    }
+
+    setActiveDragId(null)
+  }
 
   const activeGroup = stepGroups.find((group) => group.id === selectedGroupId) ?? null
   const activeSteps = activeGroup?.steps ?? []
@@ -413,7 +438,7 @@ function App() {
     const timer = window.setTimeout(() => {
       if (!activeGroup) return
       runPipeline()
-    }, 250)
+    }, BUBBLE_DELAY)
     return () => window.clearTimeout(timer)
   }, [inputText, activeSteps, runScope, scopeStepId, runPipeline, activeGroup])
 
@@ -439,193 +464,153 @@ function App() {
         : 'Muted steps below selected'
 
   return (
-    <div className="app">
-      <aside
-        className={`sidebar ${isDraggingOverSidebar ? 'drag-over' : ''}`}
-        onDragOver={(event) => {
-          event.preventDefault()
-          const isReorder = event.dataTransfer.types.includes('text/plain')
-          event.dataTransfer.dropEffect = isReorder ? 'move' : 'copy'
-          if (!isDraggingOverSidebar) setIsDraggingOverSidebar(true)
-        }}
-        onDragLeave={(event) => {
-          // Only unset if we are actually leaving the sidebar, not entering a child
-          if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-            setIsDraggingOverSidebar(false)
-          }
-        }}
-        onDragEnd={() => setIsDraggingOverSidebar(false)}
-        onDrop={(event) => {
-          event.preventDefault()
-          setIsDraggingOverSidebar(false)
-          
-          const textData = event.dataTransfer.getData('text/plain')
-          if (textData && textData.startsWith('REORDER:')) {
-             const fromIndex = parseInt(textData.replace('REORDER:', ''), 10)
-             if (!isNaN(fromIndex)) {
-                 moveStep(fromIndex, activeSteps.length - 1)
-             }
-             return
-          }
-
-          const data = event.dataTransfer.getData('application/json')
-          if (!data) return
-          try {
-            const libraryStep = JSON.parse(data) as LibraryStep
-            addStepFromLibrary(libraryStep)
-          } catch {
-            // ignore
-          }
-        }}
-      >
-        <div className="sidebar-header">
-          <h2>Steps</h2>
-          <button className="primary" onClick={addStep} disabled={!activeGroup}>
-            + Add Step
-          </button>
-        </div>
-        <input
-          className="search"
-          placeholder="Search steps"
-          value={stepSearch}
-          onChange={(event) => setStepSearch(event.target.value)}
-          disabled={!activeGroup}
-        />
-        <div
-          className="step-list"
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="app">
+        <aside
+          className={`sidebar ${isDraggingOverSidebar ? 'drag-over' : ''}`}
           onDragOver={(event) => {
             event.preventDefault()
-            event.dataTransfer.dropEffect = 'copy'
+            const isReorder = event.dataTransfer.types.includes('text/plain')
+            event.dataTransfer.dropEffect = isReorder ? 'move' : 'copy'
+            if (!isDraggingOverSidebar) setIsDraggingOverSidebar(true)
           }}
+          onDragLeave={(event) => {
+            // Only unset if we are actually leaving the sidebar, not entering a child
+            if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+              setIsDraggingOverSidebar(false)
+            }
+          }}
+          onDragEnd={() => setIsDraggingOverSidebar(false)}
           onDrop={(event) => {
             event.preventDefault()
+            setIsDraggingOverSidebar(false)
+            
+            const textData = event.dataTransfer.getData('text/plain')
+            if (textData && textData.startsWith('REORDER:')) {
+               const fromIndex = parseInt(textData.replace('REORDER:', ''), 10)
+               if (!isNaN(fromIndex)) {
+                   moveStep(fromIndex, activeSteps.length - 1)
+               }
+               return
+            }
+
             const data = event.dataTransfer.getData('application/json')
             if (!data) return
             try {
               const libraryStep = JSON.parse(data) as LibraryStep
-              // If dropped directly on the list (not on an item), add to end
               addStepFromLibrary(libraryStep)
             } catch {
-              // ignore invalid data
+              // ignore
             }
           }}
         >
-          {visibleSteps.map((step, index) => (
-            <div
-              key={step.id}
-              className={`step-item ${step.id === selectedStep?.id ? 'active' : ''} ${dropTargetIndex === index ? 'drop-target' : ''}`}
-              draggable
-              onDragStart={(event) => {
-                event.stopPropagation()
-                event.dataTransfer.setData('text/plain', `REORDER:${index}`)
-                event.dataTransfer.effectAllowed = 'move'
-              }}
-              onDragOver={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                event.dataTransfer.dropEffect = 'move'
-                setDropTargetIndex(index)
-              }}
-              onDragLeave={() => {
-                 if (dropTargetIndex === index) {
-                   setDropTargetIndex(null)
-                 }
-              }}
-              onDrop={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                setDropTargetIndex(null)
-
-                const textData = event.dataTransfer.getData('text/plain')
-                
-                // 1. Try reorder
-                if (textData && textData.startsWith('REORDER:')) {
-                   const fromIndex = parseInt(textData.replace('REORDER:', ''), 10)
-                   if (!isNaN(fromIndex) && fromIndex !== index) {
-                     moveStep(fromIndex, index)
-                   }
-                   return
-                }
-
-                // 2. Try library drop (it usually comes as application/json, but let's check text/plain too if needed or fallback)
-                // The library item sets 'application/json'.
-                const jsonData = event.dataTransfer.getData('application/json')
-                if (jsonData) {
-                  try {
-                    const libraryStep = JSON.parse(jsonData)
-                    if (libraryStep && typeof libraryStep.title === 'string') {
-                       addStepFromLibrary(libraryStep, index)
-                    }
-                  } catch {
-                     // ignore
-                  }
-                }
-              }}
-              onClick={() => setSelectedStepId(step.id)}
-              onContextMenu={(event) => {
-                event.preventDefault()
-                setContextMenu({
-                  x: event.clientX,
-                  y: event.clientY,
-                  stepId: step.id,
-                })
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  setSelectedStepId(step.id)
-                }
-              }}
-              role="button"
-              tabIndex={0}
+          <div className="sidebar-header">
+            <h2>Steps</h2>
+            <button className="primary" onClick={addStep} disabled={!activeGroup}>
+              + Add Step
+            </button>
+          </div>
+          <input
+            className="search"
+            placeholder="Search steps"
+            value={stepSearch}
+            onChange={(event) => setStepSearch(event.target.value)}
+            disabled={!activeGroup}
+          />
+          <div
+            className="step-list"
+            onDragOver={(event) => {
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'copy'
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              const data = event.dataTransfer.getData('application/json')
+              if (!data) return
+              try {
+                const libraryStep = JSON.parse(data) as LibraryStep
+                // If dropped directly on the list (not on an item), add to end
+                addStepFromLibrary(libraryStep)
+              } catch {
+                // ignore invalid data
+              }
+            }}
+          >
+            <SortableContext
+              items={visibleSteps.map((s) => s.id)}
+              strategy={verticalListSortingStrategy}
+              disabled={!!stepSearch}
             >
-              <div className="step-title">
-                {editingTitleStepId === step.id ? (
-                  <input
-                    autoFocus
-                    className="step-title-input"
-                    value={step.title}
-                    onChange={(e) => updateStep(step.id, { title: e.target.value })}
-                    onBlur={() => setEditingTitleStepId(null)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        setEditingTitleStepId(null)
-                      }
-                      e.stopPropagation()
+              <AnimatePresence mode='popLayout'>
+                {visibleSteps.map((step, index) => (
+                  <SortableStepItem
+                    key={step.id}
+                    id={step.id}
+                    step={step}
+                    index={index}
+                    hasActiveDrag={!!activeDragId}
+                    isSelected={step.id === selectedStep?.id}
+                    dropTargetIndex={dropTargetIndex}
+                    editingTitleStepId={editingTitleStepId}
+                    onSelect={setSelectedStepId}
+                    onContextMenu={(e: React.MouseEvent, id: string) => {
+                      setContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        stepId: id,
+                      })
                     }}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span onDoubleClick={() => setEditingTitleStepId(step.id)}>
-                    {step.title || `title ${index + 1}`}
-                  </span>
-                )}
-                {step.muted && <span className="badge">Muted</span>}
-              </div>
-              <div className="step-actions">
-                <button
-                  type="button"
-                  className="ghost danger"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    deleteStep(step.id)
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
-          {!activeGroup && (
-            <div className="empty">Create or load a group to manage steps.</div>
-          )}
-          {activeGroup && !activeSteps.length && (
-            <div className="empty">This group is empty. Add your first step.</div>
-          )}
-        </div>
-      </aside>
+                    onUpdateTitle={(id: string, title: string) => updateStep(id, { title })}
+                    setEditingTitleStepId={setEditingTitleStepId}
+                    onDelete={deleteStep}
+                    onDragOver={(event: React.DragEvent) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      event.dataTransfer.dropEffect = 'copy'
+                      setDropTargetIndex(index)
+                    }}
+                    onDragLeave={() => {
+                      if (dropTargetIndex === index) {
+                        setDropTargetIndex(null)
+                      }
+                    }}
+                    onDrop={(event: React.DragEvent) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setDropTargetIndex(null)
 
-      <main className="app-main">
+                      const jsonData = event.dataTransfer.getData('application/json')
+                      if (jsonData) {
+                        try {
+                          const libraryStep = JSON.parse(jsonData)
+                          if (libraryStep && typeof libraryStep.title === 'string') {
+                            addStepFromLibrary(libraryStep, index)
+                          }
+                        } catch {
+                          // ignore
+                        }
+                      }
+                    }}
+                  />
+                ))}
+              </AnimatePresence>
+            </SortableContext>
+            {!activeGroup && (
+              <div className="empty">Create or load a group to manage steps.</div>
+            )}
+            {activeGroup && !activeSteps.length && (
+              <div className="empty">This group is empty. Add your first step.</div>
+            )}
+          </div>
+        </aside>
+
+        <main className="app-main">
+
         {!activeGroup ? (
           <section className="panel group-picker">
             <div className="panel-header">
@@ -723,9 +708,6 @@ function App() {
             </button>
             <span className="muted">Helpers: upper, lower, trim</span>
           </div>
-                  {stepErrors[selectedStep.id] && (
-                    <div className="error">Error: {stepErrors[selectedStep.id]}</div>
-                  )}
                 </>
               ) : (
                 <div className="empty">Select a step to begin editing.</div>
@@ -770,7 +752,9 @@ function App() {
                 </div>
               </div>
               <div className="io-panel">
-                <div className="panel-header">
+                <div 
+                className="panel-header"                 
+                >
                   <h2>Output</h2>
                   <select
                     className="lang-select"
@@ -786,7 +770,10 @@ function App() {
                     <option value="xml">XML</option>
                   </select>
                 </div>
-                <div className="io-editor">
+                <div className="io-editor"
+                    style={{
+                      outline: Object.keys(stepErrors).length > 0 ? 'solid 1px red' : 'none'}}
+                >
                   <Editor
                     height="100%"
                     language={outputLanguage}
@@ -810,7 +797,7 @@ function App() {
         )}
       </main>
 
-      <aside className="sidebar library">
+      <Droppable id="library-droppable" className="sidebar library">
         <div className="library-section">
           <div className="sidebar-header">
             <h2
@@ -985,7 +972,28 @@ function App() {
             </>
           )}
         </div>
-      </aside>
+      </Droppable>
+      <DragOverlay>
+        {activeDragId ? (
+          <StepItem
+            step={activeSteps.find((s) => s.id === activeDragId)!}
+            index={-1}
+            isSelected={activeDragId === selectedStepId}
+            dropTargetIndex={null}
+            editingTitleStepId={null}
+            onSelect={() => {}}
+            onContextMenu={() => {}}
+            onUpdateTitle={() => {}}
+            setEditingTitleStepId={() => {}}
+            onDelete={() => {}}
+            style={{
+              boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
+              cursor: 'grabbing',
+              background: '#fff',
+            }}
+          />
+        ) : null}
+      </DragOverlay>
       {contextMenu && (
         <div
           className="context-menu"
@@ -1007,6 +1015,7 @@ function App() {
         </div>
       )}
     </div>
+    </DndContext>
   )
 }
 
