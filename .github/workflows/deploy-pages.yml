@@ -47,7 +47,9 @@ jobs:
         run: pnpm -C app install --frozen-lockfile
 
       - name: Build
-        run: pnpm -C app build -- --base=/${{ github.event.repository.name }}/
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+        run: pnpm -C app build
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
