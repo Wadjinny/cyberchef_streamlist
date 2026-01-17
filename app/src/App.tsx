@@ -29,6 +29,9 @@ import type { Step, StepGroup, LibraryStep, StoredState, RunScope } from './type
 const BUBBLE_DELAY = 20
 const STORAGE_KEY = 'text-transformer-steps-v1'
 const STORAGE_VERSION = 1
+const EDITOR_SPLIT_STORAGE_KEY = 'text-transformer-editor-split-v1'
+const SIDEBAR_SPLIT_STORAGE_KEY = 'text-transformer-sidebar-split-v1'
+const LIBRARY_SPLIT_STORAGE_KEY = 'text-transformer-library-split-v1'
 const DEFAULT_CODE = `return input`
 const HELPERS_LIB = `type Helpers = {
   upper(value: string): string
@@ -115,6 +118,8 @@ const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error)
 
 function App() {
+  const appRef = useRef<HTMLDivElement | null>(null)
+  const appMainRef = useRef<HTMLElement | null>(null)
   const didInitMonaco = useRef(false)
   const stored = useMemo(() => loadStoredState(), [])
   const [stepGroups, setStepGroups] = useState<StepGroup[]>(stored.stepGroups)
@@ -156,6 +161,45 @@ function App() {
   const [libraryDropTargetIndex, setLibraryDropTargetIndex] = useState<number | null>(null)
   const [editingLibraryTitleId, setEditingLibraryTitleId] = useState<string | null>(null)
   const [editingGroupTitleId, setEditingGroupTitleId] = useState<string | null>(null)
+  const [editorPanelHeight, setEditorPanelHeight] = useState<number | null>(() => {
+    try {
+      const raw = localStorage.getItem(EDITOR_SPLIT_STORAGE_KEY)
+      if (!raw) return null
+      const n = Number(raw)
+      return Number.isFinite(n) ? n : null
+    } catch {
+      return null
+    }
+  })
+  const [isResizingEditorSplit, setIsResizingEditorSplit] = useState(false)
+  const resizeStartYRef = useRef(0)
+  const resizeStartHeightRef = useRef(0)
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(SIDEBAR_SPLIT_STORAGE_KEY)
+      const n = Number(raw)
+      return Number.isFinite(n) && n > 0 ? n : 260
+    } catch {
+      return 260
+    }
+  })
+  const [libraryWidth, setLibraryWidth] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(LIBRARY_SPLIT_STORAGE_KEY)
+      const n = Number(raw)
+      return Number.isFinite(n) && n > 0 ? n : 320
+    } catch {
+      return 320
+    }
+  })
+  const [isWideLayout, setIsWideLayout] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth > 1024 : true,
+  )
+  const [isResizingCols, setIsResizingCols] = useState<null | 'sidebar' | 'library'>(null)
+  const resizeStartXRef = useRef(0)
+  const resizeStartSidebarWidthRef = useRef(260)
+  const resizeStartLibraryWidthRef = useRef(320)
 
 
   const sensors = useSensors(
@@ -215,6 +259,105 @@ function App() {
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }, [stepGroups, selectedGroupId, selectedStepId, librarySteps])
+
+  useEffect(() => {
+    if (editorPanelHeight == null) return
+    try {
+      localStorage.setItem(EDITOR_SPLIT_STORAGE_KEY, String(editorPanelHeight))
+    } catch {
+      // ignore
+    }
+  }, [editorPanelHeight])
+
+  useEffect(() => {
+    const onResize = () => setIsWideLayout(window.innerWidth > 1024)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_SPLIT_STORAGE_KEY, String(sidebarWidth))
+    } catch {
+      // ignore
+    }
+  }, [sidebarWidth])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LIBRARY_SPLIT_STORAGE_KEY, String(libraryWidth))
+    } catch {
+      // ignore
+    }
+  }, [libraryWidth])
+
+  useEffect(() => {
+    if (!isResizingEditorSplit) return
+    const handleMove = (event: PointerEvent) => {
+      const delta = event.clientY - resizeStartYRef.current
+      const main = appMainRef.current
+      const container = main?.querySelector('.editor-io-stack') as HTMLDivElement | null
+      const containerHeight = container?.clientHeight ?? main?.clientHeight ?? 0
+
+      const minEditor = 220
+      const minIo = 220
+      const maxEditor = Math.max(minEditor, containerHeight - minIo - 16) // keep some breathing room
+
+      const next = Math.min(maxEditor, Math.max(minEditor, resizeStartHeightRef.current + delta))
+      setEditorPanelHeight(next)
+    }
+    const handleUp = () => setIsResizingEditorSplit(false)
+
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp, { once: true })
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+    }
+  }, [isResizingEditorSplit])
+
+  useEffect(() => {
+    if (!isResizingCols) return
+    const handleMove = (event: PointerEvent) => {
+      const appWidth = appRef.current?.getBoundingClientRect().width ?? window.innerWidth
+      const handleTotal = 24 // two 12px handles
+      const minMain = 520
+      const minSidebar = 220
+      const minLibrary = 260
+
+      if (isResizingCols === 'sidebar') {
+        const delta = event.clientX - resizeStartXRef.current
+        const maxSidebar = Math.max(
+          minSidebar,
+          appWidth - libraryWidth - handleTotal - minMain,
+        )
+        const next = Math.min(
+          maxSidebar,
+          Math.max(minSidebar, resizeStartSidebarWidthRef.current + delta),
+        )
+        setSidebarWidth(next)
+      } else {
+        const delta = event.clientX - resizeStartXRef.current
+        const maxLibrary = Math.max(
+          minLibrary,
+          appWidth - sidebarWidth - handleTotal - minMain,
+        )
+        // Dragging handle left (delta negative) should increase library width
+        const next = Math.min(
+          maxLibrary,
+          Math.max(minLibrary, resizeStartLibraryWidthRef.current - delta),
+        )
+        setLibraryWidth(next)
+      }
+    }
+    const handleUp = () => setIsResizingCols(null)
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp, { once: true })
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+    }
+  }, [isResizingCols, sidebarWidth, libraryWidth])
 
   useEffect(() => {
     if (!activeGroup) {
@@ -503,7 +646,18 @@ function App() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="app">
+      <div
+        className={`app ${isResizingCols ? 'is-resizing-cols' : ''}`}
+        ref={appRef}
+        style={
+          isWideLayout
+            ? ({
+                ['--sidebar-w' as any]: `${sidebarWidth}px`,
+                ['--library-w' as any]: `${libraryWidth}px`,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
         <aside
           className={`sidebar ${isDraggingOverSidebar ? 'drag-over' : ''}`}
           onDragOver={(event) => {
@@ -559,10 +713,12 @@ function App() {
             className="step-list"
             onDragOver={(event) => {
               event.preventDefault()
+              event.stopPropagation()
               event.dataTransfer.dropEffect = 'copy'
             }}
             onDrop={(event) => {
               event.preventDefault()
+              event.stopPropagation()
               const data = event.dataTransfer.getData('application/json')
               if (!data) return
               try {
@@ -647,7 +803,30 @@ function App() {
           </div>
         </aside>
 
-        <main className="app-main">
+        {isWideLayout && (
+          <div
+            className="vsplitter"
+            role="separator"
+            aria-orientation="vertical"
+            tabIndex={0}
+            onPointerDown={(event) => {
+              event.preventDefault()
+              resizeStartXRef.current = event.clientX
+              resizeStartSidebarWidthRef.current = sidebarWidth
+              setIsResizingCols('sidebar')
+              ;(event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId)
+            }}
+          >
+            <div className="vsplitter-handle" />
+          </div>
+        )}
+
+        <main
+          className={`app-main ${isResizingEditorSplit ? 'is-resizing' : ''}`}
+          ref={(node) => {
+            appMainRef.current = node
+          }}
+        >
 
         {!activeGroup ? (
           <section className="panel group-picker">
@@ -659,7 +838,7 @@ function App() {
                 </p>
               </div>
               <button className="primary" onClick={addGroup}>
-                + New Group
+                +
               </button>
             </div>
             <div className="group-list">
@@ -680,8 +859,11 @@ function App() {
             </div>
           </section>
         ) : (
-          <>
-            <section className="panel editor">
+          <div className="editor-io-stack">
+            <section
+              className="panel editor"
+              style={editorPanelHeight != null ? { height: `${editorPanelHeight}px` } : undefined}
+            >
               <div className="panel-header">
                 <div>
                   <h2>Step Editor</h2>
@@ -750,7 +932,25 @@ function App() {
                 <div className="empty">Select a step to begin editing.</div>
               )}
             </section>
-            <section className={`panel io ${ioLayout}`}>
+            <div
+              className="splitter"
+              role="separator"
+              aria-orientation="horizontal"
+              tabIndex={0}
+              onPointerDown={(event) => {
+                // Start resize drag
+                event.preventDefault()
+                const editorEl = appMainRef.current?.querySelector('section.panel.editor') as HTMLElement | null
+                resizeStartYRef.current = event.clientY
+                resizeStartHeightRef.current =
+                  editorEl?.getBoundingClientRect().height ?? editorPanelHeight ?? 360
+                setIsResizingEditorSplit(true)
+                ;(event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId)
+              }}
+            >
+              <div className="splitter-handle" />
+            </div>
+            <section className={`panel io ${ioLayout}`} style={{ flex: '1 1 auto', minHeight: 0 }}>
               <div className="io-panel">
                 <div className="panel-header">
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -850,9 +1050,27 @@ function App() {
                 </div>
               </div>
             </section>
-          </>
+          </div>
         )}
       </main>
+
+      {isWideLayout && (
+        <div
+          className="vsplitter"
+          role="separator"
+          aria-orientation="vertical"
+          tabIndex={0}
+          onPointerDown={(event) => {
+            event.preventDefault()
+            resizeStartXRef.current = event.clientX
+            resizeStartLibraryWidthRef.current = libraryWidth
+            setIsResizingCols('library')
+            ;(event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId)
+          }}
+        >
+          <div className="vsplitter-handle" />
+        </div>
+      )}
 
       <Droppable id="library-droppable" className="sidebar library">
         <div className="library-section">
@@ -864,7 +1082,7 @@ function App() {
               Step Groups {isGroupsExpanded ? '▼' : '▶'}
             </h2>
             <button className="primary" onClick={addGroup}>
-              + New Group
+            +
             </button>
           </div>
           {isGroupsExpanded && (
@@ -952,7 +1170,7 @@ function App() {
               Steps Library {isLibraryExpanded ? '▼' : '▶'}
             </h2>
             <button className="primary" onClick={addLibraryStep}>
-              + New Step
+              + 
             </button>
           </div>
           {isLibraryExpanded && (
