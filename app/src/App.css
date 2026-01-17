@@ -16,6 +16,10 @@
   flex-direction: column;
   padding: 16px;
   gap: 12px;
+  height: 100vh;
+  max-height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar.drag-over {
@@ -63,6 +67,52 @@
   padding-right: 4px;
 }
 
+/* Let the step list scroll inside the sidebar */
+.sidebar .step-list {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Hide scrollbars but keep scrolling */
+.step-list,
+.group-list,
+.library-list,
+.app-main,
+.sidebar.library {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge legacy */
+}
+
+.step-list::-webkit-scrollbar,
+.group-list::-webkit-scrollbar,
+.library-list::-webkit-scrollbar,
+.app-main::-webkit-scrollbar,
+.sidebar.library::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Show scrollbar for steps list when needed */
+.sidebar .step-list {
+  scrollbar-width: thin; /* Firefox */
+  -ms-overflow-style: auto;
+  scrollbar-gutter: stable;
+}
+
+.sidebar .step-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.sidebar .step-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.sidebar .step-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
 .step-item,
 .group-item,
 .group-row,
@@ -79,14 +129,33 @@
 
 .step-item {
   cursor: pointer;
-  transition: border-top 0.1s;
+  max-height: 160px;
+  overflow: hidden;
+  transition: border-top 0.1s, opacity 200ms ease, transform 200ms ease,
+    max-height 220ms ease, padding 220ms ease, margin 220ms ease, border-width 220ms ease,
+    filter 200ms ease;
+  user-select: none;
+  touch-action: none;
+}
+
+.step-item.is-deleting {
+  opacity: 0;
+  transform: translateX(-14px) scale(0.96);
+  filter: blur(1px);
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-top: 0;
+  margin-bottom: -8px; /* cancel .step-list gap during animation */
+  border-width: 0;
 }
 
 .step-item:focus {
   outline: none;
 }
 
-.step-item.drop-target {
+.step-item.drop-target,
+.library-item.drop-target {
   border-top: 2px solid #4f46e5;
   margin-top: -1px;
 }
@@ -96,6 +165,17 @@
 .library-item.active {
   border-color: #4f46e5;
   background: #eef2ff;
+}
+
+.step-item.is-muted {
+  opacity: 0.45;
+  filter: grayscale(0.2);
+  background: #f1f5f9;
+}
+
+.step-item.is-muted.active {
+  opacity: 0.65;
+  background: #e0e7ff;
 }
 
 .step-title {
@@ -154,6 +234,10 @@
   gap: 6px;
 }
 
+.library-item {
+  will-change: transform;
+}
+
 .group-actions,
 .library-actions {
   display: flex;
@@ -179,8 +263,6 @@
 .panel.io {
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 
 .panel {
@@ -276,11 +358,20 @@
 
 .io {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 16px;
   flex: 1;
   height: auto;
   min-height: 0;
+}
+
+.io.horizontal {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.io.vertical {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
 }
 
 .io-panel {
@@ -352,15 +443,54 @@
   font-size: 12px;
 }
 
+.step-meta {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+}
+
 .group-picker .group-list {
-  gap: 10px;
+  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  overflow: visible;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .group-picker .group-item {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   justify-content: space-between;
   font-weight: 600;
+  border: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.06);
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease,
+    background 120ms ease;
+}
+
+.group-picker .group-item:hover {
+  transform: translateY(-2px);
+  border-color: #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
+}
+
+.group-picker .group-item:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
+.group-picker .group-item .muted {
+  background: #eef2ff;
+  color: #4338ca;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .library-editor {

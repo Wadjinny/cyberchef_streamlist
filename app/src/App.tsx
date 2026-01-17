@@ -19,12 +19,12 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
+import { motion } from 'framer-motion'
 import './App.css'
 import { StepItem } from './components/StepItem'
 import { SortableStepItem } from './components/SortableStepItem'
 import { Droppable } from './components/Droppable'
 import type { Step, StepGroup, LibraryStep, StoredState, RunScope } from './types'
-import { AnimatePresence } from 'framer-motion'
 
 const BUBBLE_DELAY = 20
 const STORAGE_KEY = 'text-transformer-steps-v1'
@@ -151,11 +151,17 @@ function App() {
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
   const [editingTitleStepId, setEditingTitleStepId] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [deletingStepIds, setDeletingStepIds] = useState<Record<string, true>>({})
+  const [ioLayout, setIoLayout] = useState<'horizontal' | 'vertical'>('vertical') // vertical = side-by-side columns
+  const [libraryDropTargetIndex, setLibraryDropTargetIndex] = useState<number | null>(null)
+  const [editingLibraryTitleId, setEditingLibraryTitleId] = useState<string | null>(null)
+  const [editingGroupTitleId, setEditingGroupTitleId] = useState<string | null>(null)
+
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -322,6 +328,21 @@ function App() {
     })
   }
 
+  const requestDeleteStep = (id: string) => {
+    setDeletingStepIds((prev) => ({ ...prev, [id]: true }))
+    window.setTimeout(() => {
+      deleteStep(id)
+      // Cleanup (optional) after unmount
+      window.setTimeout(() => {
+        setDeletingStepIds((prev) => {
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
+      }, 0)
+    }, 220)
+  }
+
   const moveStep = (fromIndex: number, toIndex: number) => {
     if (!activeGroup) return
     updateActiveSteps((prev) => {
@@ -352,6 +373,18 @@ function App() {
     if (selectedLibraryStepId === id) {
       setSelectedLibraryStepId(null)
     }
+  }
+
+  const moveLibraryStep = (fromIndex: number, toIndex: number) => {
+    setLibrarySteps((prev) => {
+      const next = [...prev]
+      if (fromIndex < 0 || fromIndex >= next.length || toIndex < 0 || toIndex >= next.length) {
+        return next
+      }
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
+    })
   }
 
   const saveStepToLibrary = (stepToSave?: Step) => {
@@ -546,7 +579,6 @@ function App() {
               strategy={verticalListSortingStrategy}
               disabled={!!stepSearch}
             >
-              <AnimatePresence mode='popLayout'>
                 {visibleSteps.map((step, index) => (
                   <SortableStepItem
                     key={step.id}
@@ -557,6 +589,8 @@ function App() {
                     isSelected={step.id === selectedStep?.id}
                     dropTargetIndex={dropTargetIndex}
                     editingTitleStepId={editingTitleStepId}
+                    className={deletingStepIds[step.id] ? 'is-deleting' : ''}
+                    isDeleting={!!deletingStepIds[step.id]}
                     onSelect={setSelectedStepId}
                     onContextMenu={(e: React.MouseEvent, id: string) => {
                       setContextMenu({
@@ -567,7 +601,12 @@ function App() {
                     }}
                     onUpdateTitle={(id: string, title: string) => updateStep(id, { title })}
                     setEditingTitleStepId={setEditingTitleStepId}
-                    onDelete={deleteStep}
+                    onToggleMuted={(id: string) => {
+                      const target = activeSteps.find((s) => s.id === id)
+                      if (!target) return
+                      updateStep(id, { muted: !target.muted })
+                    }}
+                    onDelete={requestDeleteStep}
                     onDragOver={(event: React.DragEvent) => {
                       event.preventDefault()
                       event.stopPropagation()
@@ -598,7 +637,6 @@ function App() {
                     }}
                   />
                 ))}
-              </AnimatePresence>
             </SortableContext>
             {!activeGroup && (
               <div className="empty">Create or load a group to manage steps.</div>
@@ -706,17 +744,36 @@ function App() {
             >
               Save to library
             </button>
-            <span className="muted">Helpers: upper, lower, trim</span>
           </div>
                 </>
               ) : (
                 <div className="empty">Select a step to begin editing.</div>
               )}
             </section>
-            <section className="panel io">
+            <section className={`panel io ${ioLayout}`}>
               <div className="io-panel">
                 <div className="panel-header">
-                  <h2>Input</h2>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <h2>Input</h2>
+                    <button
+                      className="ghost"
+                      style={{ padding: '4px', display: 'flex' }}
+                      onClick={() => setIoLayout(prev => prev === 'vertical' ? 'horizontal' : 'vertical')}
+                      title={ioLayout === 'vertical' ? "Switch to horizontal split" : "Switch to vertical split"}
+                    >
+                      {ioLayout === 'vertical' ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="4" y="4" width="16" height="16" rx="2" />
+                          <line x1="12" y1="4" x2="12" y2="20" />
+                        </svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="4" y="4" width="16" height="16" rx="2" />
+                          <line x1="4" y1="12" x2="20" y2="12" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                   <select
                     className="lang-select"
                     value={inputLanguage}
@@ -829,7 +886,30 @@ function App() {
                       className="group-select"
                       onClick={() => setSelectedGroupId(group.id)}
                     >
-                      <span>{group.title}</span>
+                      {editingGroupTitleId === group.id ? (
+                        <input
+                          autoFocus
+                          className="step-title-input"
+                          value={group.title}
+                          onChange={(e) => updateGroupTitle(group.id, e.target.value)}
+                          onBlur={() => setEditingGroupTitleId(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') setEditingGroupTitleId(null)
+                            e.stopPropagation()
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <span
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            setEditingGroupTitleId(group.id)
+                          }}
+                        >
+                          {group.title}
+                        </span>
+                      )}
                       <span className="muted">{group.steps.length} steps</span>
                     </button>
                     <div className="group-actions">
@@ -883,23 +963,105 @@ function App() {
                 value={librarySearch}
                 onChange={(event) => setLibrarySearch(event.target.value)}
               />
-              <div className="library-list">
-                {visibleLibrarySteps.map((step) => (
-                  <div
+              <div
+                className="library-list"
+                onDragOver={(event) => {
+                  // Allow dropping to reorder within the library list
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  setLibraryDropTargetIndex(null)
+
+                  const textData = event.dataTransfer.getData('text/plain')
+                  if (textData && textData.startsWith('LIB_REORDER:')) {
+                    const fromIndex = parseInt(textData.replace('LIB_REORDER:', ''), 10)
+                    if (!Number.isNaN(fromIndex)) {
+                      // Dropped on the list itself → move to end
+                      moveLibraryStep(fromIndex, Math.max(0, librarySteps.length - 1))
+                    }
+                  }
+                }}
+              >
+                {visibleLibrarySteps.map((step, index) => (
+                  <motion.div
                     key={step.id}
-                    className={`library-item ${step.id === selectedLibraryStep?.id ? 'active' : ''}`}
-                    draggable
-                    onDragStart={(event) => {
-                      event.dataTransfer.setData('application/json', JSON.stringify(step))
-                      event.dataTransfer.effectAllowed = 'copy'
-                    }}
+                    layout
+                    transition={{ type: 'spring', stiffness: 600, damping: 45 }}
                   >
+                    <div
+                      className={`library-item ${step.id === selectedLibraryStep?.id ? 'active' : ''} ${libraryDropTargetIndex === index ? 'drop-target' : ''}`}
+                      draggable={editingLibraryTitleId !== step.id}
+                      onDragStart={(event: React.DragEvent<HTMLDivElement>) => {
+                        if (editingLibraryTitleId === step.id) return
+                        event.dataTransfer.setData(
+                          'application/json',
+                          JSON.stringify(step),
+                        )
+                        // Also allow reordering within the library list
+                        event.dataTransfer.setData('text/plain', `LIB_REORDER:${index}`)
+                        event.dataTransfer.effectAllowed = 'copyMove'
+                      }}
+                      onDragOver={(event: React.DragEvent<HTMLDivElement>) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        event.dataTransfer.dropEffect = 'move'
+                        setLibraryDropTargetIndex(index)
+                      }}
+                      onDragLeave={() => {
+                        if (libraryDropTargetIndex === index) {
+                          setLibraryDropTargetIndex(null)
+                        }
+                      }}
+                      onDrop={(event: React.DragEvent<HTMLDivElement>) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        setLibraryDropTargetIndex(null)
+
+                        const textData = event.dataTransfer.getData('text/plain')
+                        if (textData && textData.startsWith('LIB_REORDER:')) {
+                          const fromIndex = parseInt(
+                            textData.replace('LIB_REORDER:', ''),
+                            10,
+                          )
+                          if (!Number.isNaN(fromIndex)) {
+                            moveLibraryStep(fromIndex, index)
+                          }
+                        }
+                      }}
+                    >
                     <button
                       type="button"
                       className="library-select"
                       onClick={() => setSelectedLibraryStepId(step.id)}
                     >
-                      <span>{step.title}</span>
+                      {editingLibraryTitleId === step.id ? (
+                        <input
+                          autoFocus
+                          className="step-title-input"
+                          value={step.title}
+                          onChange={(e) =>
+                            updateLibraryStep(step.id, { title: e.target.value })
+                          }
+                          onBlur={() => setEditingLibraryTitleId(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') setEditingLibraryTitleId(null)
+                            e.stopPropagation()
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <span
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            setEditingLibraryTitleId(step.id)
+                          }}
+                        >
+                          {step.title}
+                        </span>
+                      )}
                     </button>
                     <div className="library-actions">
                       <button
@@ -918,7 +1080,8 @@ function App() {
                         Delete
                       </button>
                     </div>
-                  </div>
+                    </div>
+                  </motion.div>
                 ))}
                 {!librarySteps.length && (
                   <div className="empty">Save a step to build your library.</div>
@@ -985,11 +1148,13 @@ function App() {
             onContextMenu={() => {}}
             onUpdateTitle={() => {}}
             setEditingTitleStepId={() => {}}
+            onToggleMuted={() => {}}
             onDelete={() => {}}
             style={{
               boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
               cursor: 'grabbing',
               background: '#fff',
+              touchAction: 'none',
             }}
           />
         ) : null}

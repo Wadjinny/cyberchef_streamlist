@@ -9,9 +9,17 @@ type StepItemProps = ComponentProps<typeof StepItem>;
 interface SortableStepItemProps extends StepItemProps {
   id: string;
   hasActiveDrag?: boolean;
+  isDeleting?: boolean;
 }
 
-export function SortableStepItem({ step, id, hasActiveDrag, style, ...props }: SortableStepItemProps) {
+export function SortableStepItem({
+  step,
+  id,
+  hasActiveDrag,
+  isDeleting,
+  style,
+  ...props
+}: SortableStepItemProps) {
   const {
     attributes,
     listeners,
@@ -23,10 +31,18 @@ export function SortableStepItem({ step, id, hasActiveDrag, style, ...props }: S
 
   const combinedStyle = {
     ...style,
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0 : 1,
+    transform: isDeleting
+      ? 'translateX(-14px) scale(0.96)'
+      : CSS.Transform.toString(transform),
+    transition: isDeleting
+      ? 'opacity 220ms ease, transform 220ms ease, max-height 220ms ease, padding 220ms ease, margin 220ms ease, border-width 220ms ease, filter 220ms ease'
+      : transition,
+    opacity: isDeleting ? 0 : isDragging ? 0.4 : 1,
     touchAction: 'none',
+    zIndex: isDragging ? 999 : 'auto',
+    position: 'relative' as const,
+    filter: isDeleting ? 'blur(1px)' : undefined,
+    pointerEvents: isDeleting ? 'none' : undefined,
   };
 
   return (
