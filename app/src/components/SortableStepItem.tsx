@@ -2,6 +2,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { StepItem } from './StepItem';
 import type { ComponentProps } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 
 type StepItemProps = ComponentProps<typeof StepItem>;
@@ -42,8 +43,8 @@ export function SortableStepItem({
     zIndex: isDragging ? 999 : 'auto',
     position: 'relative' as const,
     filter: isDeleting ? 'blur(1px)' : undefined,
-    pointerEvents: isDeleting ? 'none' : undefined,
-  };
+    pointerEvents: isDeleting ? ('none' as const) : undefined,
+  } satisfies React.CSSProperties;
 
   return (
     <motion.div
