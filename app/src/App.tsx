@@ -32,12 +32,16 @@ import { useSteps } from './hooks/useSteps'
 import { useLibrary } from './hooks/useLibrary'
 import { usePipeline } from './hooks/usePipeline'
 import { useSearch } from './hooks/useSearch'
+import { useTheme } from './hooks/useTheme'
 
 function App() {
-  // 1. Load initial state
+  // 1. Theme
+  const { theme, toggleTheme } = useTheme()
+
+  // 2. Load initial state
   const stored = useMemo(() => loadStoredState(), [])
 
-  // 2. Monaco editor configuration
+  // 3. Monaco editor configuration
   const didInitMonaco = useRef(false)
   const [inputLanguage, setInputLanguage] = useState('plaintext')
   const [outputLanguage, setOutputLanguage] = useState('plaintext')
@@ -56,7 +60,7 @@ function App() {
     )
   }, [])
 
-  // 3. Core data hooks
+  // 4. Core data hooks
   const groupsAPI = useStepGroups(stored.stepGroups, stored.selectedGroupId)
   const stepsAPI = useSteps(groupsAPI.activeGroup, stored.selectedStepId, groupsAPI.setStepGroups)
   const libraryAPI = useLibrary(
@@ -84,7 +88,7 @@ function App() {
     libraryAPI.librarySteps
   )
 
-  // 4. UI state
+  // 5. UI state
   const [ioLayout, setIoLayout] = useState<'horizontal' | 'vertical'>('vertical')
   const [isGroupsExpanded, setIsGroupsExpanded] = useState(true)
   const [isLibraryExpanded, setIsLibraryExpanded] = useState(true)
@@ -95,7 +99,7 @@ function App() {
   } | null>(null)
   const [editingGroupTitleId, setEditingGroupTitleId] = useState<string | null>(null)
 
-  // 5. Drag-and-drop state
+  // 6. Drag-and-drop state
   const [isDraggingOverSidebar, setIsDraggingOverSidebar] = useState(false)
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
@@ -376,9 +380,19 @@ function App() {
         >
           <div className="sidebar-header">
             <h2>Steps</h2>
-            <button className="primary" onClick={stepsAPI.addStep} disabled={!groupsAPI.activeGroup}>
-              + Add Step
-            </button>
+            <div className="header-actions">
+              <button
+                className="ghost"
+                onClick={toggleTheme}
+                title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+                style={{ padding: '6px 10px', fontSize: '16px' }}
+              >
+                {theme === 'light' ? '🌙' : '☀️'}
+              </button>
+              <button className="primary" onClick={stepsAPI.addStep} disabled={!groupsAPI.activeGroup}>
+                + Add Step
+              </button>
+            </div>
           </div>
           <input
             className="search"
@@ -568,7 +582,7 @@ function App() {
                       <Editor
                         height="220px"
                         language="javascript"
-                        theme="vs-light"
+                        theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                         beforeMount={handleEditorBeforeMount}
                         value={stepsAPI.selectedStep?.code ?? ''}
                         onChange={(value) => {
@@ -676,7 +690,7 @@ function App() {
                   <Editor
                     height="100%"
                     language={inputLanguage}
-                    theme="vs-light"
+                    theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                     beforeMount={handleEditorBeforeMount}
                     value={pipelineAPI.inputText}
                     onChange={(value) => pipelineAPI.setInputText(value ?? '')}
@@ -718,7 +732,7 @@ function App() {
                   <Editor
                     height="100%"
                     language={outputLanguage}
-                    theme="vs-light"
+                    theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                     beforeMount={handleEditorBeforeMount}
                     value={pipelineAPI.outputText}
                     options={{
@@ -1011,7 +1025,7 @@ function App() {
                       <Editor
                         height="180px"
                         language="javascript"
-                        theme="vs-light"
+                        theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                         beforeMount={handleEditorBeforeMount}
                         value={libraryAPI.selectedLibraryStep?.code ?? ''}
                         onChange={(value) => {
