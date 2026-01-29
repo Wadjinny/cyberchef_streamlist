@@ -1,18 +1,97 @@
 :root {
+  /* Light theme colors */
+  --bg-primary: #f4f5f7;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f8f9fb;
+  --bg-quaternary: #f1f5f9;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-meta: #94a3b8;
+
+  --border-primary: #e3e7ee;
+  --border-secondary: #d7dce3;
+  --border-tertiary: #cbd5e1;
+
+  --accent-primary: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-bg: #eef2ff;
+  --accent-bg-hover: #e0e7ff;
+
+  --color-danger: #b91c1c;
+  --color-danger-bg: #fee2e2;
+  --color-danger-border: #fca5a5;
+  --color-success-bg: #f0fdf4;
+  --color-warning-bg: #fef3c7;
+  --color-warning-text: #92400e;
+
+  --splitter-primary: #cbd5e1;
+  --splitter-hover: #94a3b8;
+  --splitter-active: #64748b;
+
+  --shadow-panel: 0 10px 30px rgba(15, 23, 42, 0.06);
+  --shadow-menu: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-group: 0 8px 16px rgba(15, 23, 42, 0.06);
+  --shadow-group-hover: 0 12px 24px rgba(15, 23, 42, 0.1);
+
+  --group-gradient: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
     sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #0f172a;
-  background-color: #f4f5f7;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+[data-theme="dark"] {
+  /* Dark theme colors */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-quaternary: #475569;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-meta: #64748b;
+
+  --border-primary: #334155;
+  --border-secondary: #475569;
+  --border-tertiary: #64748b;
+
+  --accent-primary: #6366f1;
+  --accent-hover: #818cf8;
+  --accent-bg: #312e81;
+  --accent-bg-hover: #3730a3;
+
+  --color-danger: #f87171;
+  --color-danger-bg: #450a0a;
+  --color-danger-border: #991b1b;
+  --color-success-bg: #052e16;
+  --color-warning-bg: #451a03;
+  --color-warning-text: #fef3c7;
+
+  --splitter-primary: #475569;
+  --splitter-hover: #64748b;
+  --splitter-active: #94a3b8;
+
+  --shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.3);
+  --shadow-menu: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-group: 0 8px 16px rgba(0, 0, 0, 0.3);
+  --shadow-group-hover: 0 12px 24px rgba(0, 0, 0, 0.4);
+
+  --group-gradient: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+}
+
 * {
   box-sizing: border-box;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 body {
