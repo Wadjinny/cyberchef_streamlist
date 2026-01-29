@@ -37,6 +37,14 @@ export const useStepGroups = (initialGroups: StepGroup[], initialSelectedId: str
     })
   }
 
+  const updateGroupInputText = (id: string, inputText: string) => {
+    setStepGroups((prev) =>
+      prev.map((group) =>
+        group.id === id ? { ...group, inputText, updatedAt: Date.now() } : group
+      )
+    )
+  }
+
   return {
     stepGroups,
     selectedGroupId,
@@ -45,6 +53,7 @@ export const useStepGroups = (initialGroups: StepGroup[], initialSelectedId: str
     addGroup,
     updateGroupTitle,
     deleteGroup,
+    updateGroupInputText,
     setSelectedGroupId,
   }
 }

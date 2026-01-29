@@ -25,7 +25,12 @@ export const loadStoredState = (): StoredState => {
     }
     return {
       version: STORAGE_VERSION,
-      stepGroups: Array.isArray(parsed.stepGroups) ? parsed.stepGroups : [],
+      stepGroups: Array.isArray(parsed.stepGroups)
+        ? parsed.stepGroups.map(group => ({
+            ...group,
+            inputText: group.inputText ?? '',
+          }))
+        : [],
       selectedGroupId: parsed.selectedGroupId ?? null,
       selectedStepId: parsed.selectedStepId ?? null,
       librarySteps: Array.isArray(parsed.librarySteps) ? parsed.librarySteps : [],

@@ -14,6 +14,7 @@ export const createGroup = (index: number): StepGroup => ({
   id: crypto.randomUUID(),
   title: `Group ${index}`,
   steps: [],
+  inputText: '',
   createdAt: Date.now(),
   updatedAt: Date.now(),
 })
