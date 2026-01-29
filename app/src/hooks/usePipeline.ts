@@ -1,14 +1,34 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { Step, RunScope } from '../types'
 import { helpers, getErrorMessage } from '../utils/helpers'
 import { BUBBLE_DELAY } from '../utils/constants'
 
-export const usePipeline = (activeSteps: Step[], hasActiveGroup: boolean) => {
-  const [inputText, setInputText] = useState('')
+export const usePipeline = (
+  activeSteps: Step[],
+  hasActiveGroup: boolean,
+  initialInputText: string,
+  onInputTextChange?: (inputText: string) => void
+) => {
+  const [inputText, setInputText] = useState(initialInputText)
   const [outputText, setOutputText] = useState('')
   const [stepErrors, setStepErrors] = useState<Record<string, string>>({})
   const [runScope] = useState<RunScope>('all')
   const [scopeStepId, setScopeStepId] = useState<string | null>(null)
+  const onInputTextChangeRef = useRef(onInputTextChange)
+
+  useEffect(() => {
+    onInputTextChangeRef.current = onInputTextChange
+  }, [onInputTextChange])
+
+  useEffect(() => {
+    setInputText(initialInputText)
+  }, [initialInputText])
+
+  useEffect(() => {
+    if (onInputTextChangeRef.current) {
+      onInputTextChangeRef.current(inputText)
+    }
+  }, [inputText])
 
   const resolveScopeSteps = useCallback(
     (scope: RunScope, anchorId: string | null) => {

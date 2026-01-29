@@ -65,7 +65,19 @@ function App() {
     stepsAPI.updateActiveSteps,
     stepsAPI.setSelectedStepId
   )
-  const pipelineAPI = usePipeline(stepsAPI.activeSteps, !!groupsAPI.activeGroup)
+  const pipelineAPI = usePipeline(
+    stepsAPI.activeSteps,
+    !!groupsAPI.activeGroup,
+    groupsAPI.activeGroup?.inputText ?? '',
+    useCallback(
+      (inputText: string) => {
+        if (groupsAPI.activeGroup) {
+          groupsAPI.updateGroupInputText(groupsAPI.activeGroup.id, inputText)
+        }
+      },
+      [groupsAPI]
+    )
+  )
   const searchAPI = useSearch(
     groupsAPI.stepGroups,
     stepsAPI.activeSteps,

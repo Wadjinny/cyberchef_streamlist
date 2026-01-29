@@ -11,6 +11,7 @@ export type StepGroup = {
   id: string
   title: string
   steps: Step[]
+  inputText?: string
   createdAt: number
   updatedAt: number
 }
