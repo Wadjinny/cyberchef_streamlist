@@ -6,9 +6,15 @@
   --sidebar-w: 260px;
   --library-w: 320px;
   display: grid;
-  grid-template-columns: var(--sidebar-w) 12px minmax(0, 1fr) 12px var(--library-w);
+  grid-template-rows: 40px 1fr;
   height: 100vh;
   background: var(--bg-primary);
+}
+
+.app-content {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 12px minmax(0, 1fr) 12px var(--library-w);
+  height: 100%;
 }
 
 .app.is-resizing-cols,
@@ -17,9 +23,32 @@
   user-select: none;
 }
 
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  height: 40px;
+}
+
+.navbar-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.navbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .vsplitter {
   width: 12px;
-  height: 100vh;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -50,8 +79,8 @@
   flex-direction: column;
   padding: 16px;
   gap: 12px;
-  height: 100vh;
-  max-height: 100vh;
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -582,13 +611,13 @@
 }
 
 @media (max-width: 1280px) {
-  .app {
+  .app-content {
     grid-template-columns: var(--sidebar-w) 12px minmax(0, 1fr) 12px var(--library-w);
   }
 }
 
 @media (max-width: 1024px) {
-  .app {
+  .app-content {
     grid-template-columns: 1fr;
   }
 

@@ -340,6 +340,21 @@ function App() {
             : undefined
         }
       >
+        <nav className="navbar">
+          <h1 className="navbar-title">Father Chef</h1>
+          <div className="navbar-actions">
+            <button
+              className="ghost"
+              onClick={toggleTheme}
+              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+              style={{ padding: '6px 10px', fontSize: '16px' }}
+            >
+              {theme === 'light' ? '🌙' : '☀️'}
+            </button>
+          </div>
+        </nav>
+
+        <div className="app-content">
         <aside
           className={`sidebar ${isDraggingOverSidebar ? 'drag-over' : ''}`}
           onDragOver={(event) => {
@@ -380,19 +395,9 @@ function App() {
         >
           <div className="sidebar-header">
             <h2>Steps</h2>
-            <div className="header-actions">
-              <button
-                className="ghost"
-                onClick={toggleTheme}
-                title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-                style={{ padding: '6px 10px', fontSize: '16px' }}
-              >
-                {theme === 'light' ? '🌙' : '☀️'}
-              </button>
-              <button className="primary" onClick={stepsAPI.addStep} disabled={!groupsAPI.activeGroup}>
-                + Add Step
-              </button>
-            </div>
+            <button className="primary" onClick={stepsAPI.addStep} disabled={!groupsAPI.activeGroup}>
+              + Add Step
+            </button>
           </div>
           <input
             className="search"
@@ -1056,6 +1061,7 @@ function App() {
           )}
         </div>
       </Droppable>
+      </div>
       <DragOverlay>
         {activeDragId ? (
           <StepItem
