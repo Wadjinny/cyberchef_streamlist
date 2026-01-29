@@ -24,143 +24,73 @@ import './App.css'
 import { StepItem } from './components/StepItem'
 import { SortableStepItem } from './components/SortableStepItem'
 import { Droppable } from './components/Droppable'
-import type { Step, StepGroup, LibraryStep, StoredState, RunScope } from './types'
-
-const BUBBLE_DELAY = 20
-const STORAGE_KEY = 'text-transformer-steps-v1'
-const STORAGE_VERSION = 1
-const EDITOR_SPLIT_STORAGE_KEY = 'text-transformer-editor-split-v1'
-const SIDEBAR_SPLIT_STORAGE_KEY = 'text-transformer-sidebar-split-v1'
-const LIBRARY_SPLIT_STORAGE_KEY = 'text-transformer-library-split-v1'
-const DEFAULT_CODE = `return input`
-const HELPERS_LIB = `type Helpers = {
-  upper(value: string): string
-  lower(value: string): string
-  trim(value: string): string
-}
-
-declare const helpers: Helpers
-declare const input: string
-`
-
-const helpers = {
-  upper: (value: string) => value.toUpperCase(),
-  lower: (value: string) => value.toLowerCase(),
-  trim: (value: string) => value.trim(),
-}
-
-const createStep = (index: number): Step => ({
-  id: crypto.randomUUID(),
-  title: `title ${index}`,
-  code: DEFAULT_CODE,
-  muted: false,
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-})
-
-const createGroup = (index: number): StepGroup => ({
-  id: crypto.randomUUID(),
-  title: `Group ${index}`,
-  steps: [],
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-})
-
-const createLibraryStep = (index: number, seed?: Step): LibraryStep => ({
-  id: crypto.randomUUID(),
-  title: seed?.title ?? `Library Step ${index}`,
-  code: seed?.code ?? DEFAULT_CODE,
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-})
-
-const loadStoredState = (): StoredState => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return {
-        version: STORAGE_VERSION,
-        stepGroups: [],
-        selectedGroupId: null,
-        selectedStepId: null,
-        librarySteps: [],
-      }
-    }
-    const parsed = JSON.parse(raw) as StoredState
-    if (!parsed || parsed.version !== STORAGE_VERSION) {
-      return {
-        version: STORAGE_VERSION,
-        stepGroups: [],
-        selectedGroupId: null,
-        selectedStepId: null,
-        librarySteps: [],
-      }
-    }
-    return {
-      version: STORAGE_VERSION,
-      stepGroups: Array.isArray(parsed.stepGroups) ? parsed.stepGroups : [],
-      selectedGroupId: parsed.selectedGroupId ?? null,
-      selectedStepId: parsed.selectedStepId ?? null,
-      librarySteps: Array.isArray(parsed.librarySteps) ? parsed.librarySteps : [],
-    }
-  } catch {
-    return {
-      version: STORAGE_VERSION,
-      stepGroups: [],
-      selectedGroupId: null,
-      selectedStepId: null,
-      librarySteps: [],
-    }
-  }
-}
-
-const getErrorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : String(error)
+import type { StoredState, LibraryStep } from './types'
+import { STORAGE_KEY, STORAGE_VERSION, EDITOR_SPLIT_STORAGE_KEY, SIDEBAR_SPLIT_STORAGE_KEY, LIBRARY_SPLIT_STORAGE_KEY, HELPERS_LIB } from './utils/constants'
+import { loadStoredState } from './utils/storage'
+import { useStepGroups } from './hooks/useStepGroups'
+import { useSteps } from './hooks/useSteps'
+import { useLibrary } from './hooks/useLibrary'
+import { usePipeline } from './hooks/usePipeline'
+import { useSearch } from './hooks/useSearch'
 
 function App() {
-  const appRef = useRef<HTMLDivElement | null>(null)
-  const appMainRef = useRef<HTMLElement | null>(null)
-  const didInitMonaco = useRef(false)
+  // 1. Load initial state
   const stored = useMemo(() => loadStoredState(), [])
-  const [stepGroups, setStepGroups] = useState<StepGroup[]>(stored.stepGroups)
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(
-    stored.selectedGroupId,
-  )
-  const [selectedStepId, setSelectedStepId] = useState<string | null>(
-    stored.selectedStepId,
-  )
-  const [librarySteps, setLibrarySteps] = useState<LibraryStep[]>(
-    stored.librarySteps,
-  )
-  const [selectedLibraryStepId, setSelectedLibraryStepId] = useState<string | null>(
-    null,
-  )
-  const [groupSearch, setGroupSearch] = useState('')
-  const [librarySearch, setLibrarySearch] = useState('')
-  const [stepSearch, setStepSearch] = useState('')
-  const [inputText, setInputText] = useState('')
-  const [outputText, setOutputText] = useState('')
+
+  // 2. Monaco editor configuration
+  const didInitMonaco = useRef(false)
   const [inputLanguage, setInputLanguage] = useState('plaintext')
   const [outputLanguage, setOutputLanguage] = useState('plaintext')
-  const [stepErrors, setStepErrors] = useState<Record<string, string>>({})
-  const [runScope] = useState<RunScope>('all')
-  const [scopeStepId, setScopeStepId] = useState<string | null>(null)
+
+  const handleEditorBeforeMount = useCallback((monaco: Monaco) => {
+    if (didInitMonaco.current) return
+    didInitMonaco.current = true
+    monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+      allowJs: true,
+      allowNonTsExtensions: true,
+      target: monaco.languages.typescript.ScriptTarget.ES2020,
+    })
+    monaco.languages.typescript.javascriptDefaults.addExtraLib(
+      HELPERS_LIB,
+      'file:///helpers.d.ts',
+    )
+  }, [])
+
+  // 3. Core data hooks
+  const groupsAPI = useStepGroups(stored.stepGroups, stored.selectedGroupId)
+  const stepsAPI = useSteps(groupsAPI.activeGroup, stored.selectedStepId, groupsAPI.setStepGroups)
+  const libraryAPI = useLibrary(
+    stepsAPI.activeSteps,
+    stored.librarySteps,
+    stepsAPI.updateActiveSteps,
+    stepsAPI.setSelectedStepId
+  )
+  const pipelineAPI = usePipeline(stepsAPI.activeSteps, !!groupsAPI.activeGroup)
+  const searchAPI = useSearch(
+    groupsAPI.stepGroups,
+    stepsAPI.activeSteps,
+    libraryAPI.librarySteps
+  )
+
+  // 4. UI state
+  const [ioLayout, setIoLayout] = useState<'horizontal' | 'vertical'>('vertical')
+  const [isGroupsExpanded, setIsGroupsExpanded] = useState(true)
+  const [isLibraryExpanded, setIsLibraryExpanded] = useState(true)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
     stepId: string
   } | null>(null)
-  const [isGroupsExpanded, setIsGroupsExpanded] = useState(true)
-  const [isLibraryExpanded, setIsLibraryExpanded] = useState(true)
+  const [editingGroupTitleId, setEditingGroupTitleId] = useState<string | null>(null)
+
+  // 5. Drag-and-drop state
   const [isDraggingOverSidebar, setIsDraggingOverSidebar] = useState(false)
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
-  const [editingTitleStepId, setEditingTitleStepId] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
-  const [deletingStepIds, setDeletingStepIds] = useState<Record<string, true>>({})
-  const [ioLayout, setIoLayout] = useState<'horizontal' | 'vertical'>('vertical') // vertical = side-by-side columns
-  const [libraryDropTargetIndex, setLibraryDropTargetIndex] = useState<number | null>(null)
-  const [editingLibraryTitleId, setEditingLibraryTitleId] = useState<string | null>(null)
-  const [editingGroupTitleId, setEditingGroupTitleId] = useState<string | null>(null)
+
+  // 6. Layout/resize state
+  const appRef = useRef<HTMLDivElement | null>(null)
+  const appMainRef = useRef<HTMLElement | null>(null)
   const [editorPanelHeight, setEditorPanelHeight] = useState<number | null>(() => {
     try {
       const raw = localStorage.getItem(EDITOR_SPLIT_STORAGE_KEY)
@@ -202,6 +132,7 @@ function App() {
   const resizeStartLibraryWidthRef = useRef(320)
 
 
+  // 7. Drag-and-drop handlers
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -220,29 +151,24 @@ function App() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
 
-    if (over && over.id === 'library-droppable' && activeGroup) {
-      const stepToSave = activeSteps.find((step) => step.id === active.id)
+    if (over && over.id === 'library-droppable' && groupsAPI.activeGroup) {
+      const stepToSave = stepsAPI.activeSteps.find((step) => step.id === active.id)
       if (stepToSave) {
-        saveStepToLibrary(stepToSave)
+        libraryAPI.saveStepToLibrary(stepToSave)
       }
-    } else if (over && active.id !== over.id && activeGroup) {
-      const oldIndex = activeSteps.findIndex((step) => step.id === active.id)
-      const newIndex = activeSteps.findIndex((step) => step.id === over.id)
-      
+    } else if (over && active.id !== over.id && groupsAPI.activeGroup) {
+      const oldIndex = stepsAPI.activeSteps.findIndex((step) => step.id === active.id)
+      const newIndex = stepsAPI.activeSteps.findIndex((step) => step.id === over.id)
+
       if (oldIndex !== -1 && newIndex !== -1) {
-        moveStep(oldIndex, newIndex)
+        stepsAPI.moveStep(oldIndex, newIndex)
       }
     }
 
     setActiveDragId(null)
   }
 
-  const activeGroup = stepGroups.find((group) => group.id === selectedGroupId) ?? null
-  const activeSteps = activeGroup?.steps ?? []
-  const selectedStep = activeSteps.find((step) => step.id === selectedStepId) ?? null
-  const selectedLibraryStep =
-    librarySteps.find((step) => step.id === selectedLibraryStepId) ?? null
-
+  // 8. Effects
   useEffect(() => {
     const handleClick = () => setContextMenu(null)
     window.addEventListener('click', handleClick)
@@ -252,13 +178,13 @@ function App() {
   useEffect(() => {
     const state: StoredState = {
       version: STORAGE_VERSION,
-      stepGroups,
-      selectedGroupId,
-      selectedStepId,
-      librarySteps,
+      stepGroups: groupsAPI.stepGroups,
+      selectedGroupId: groupsAPI.selectedGroupId,
+      selectedStepId: stepsAPI.selectedStepId,
+      librarySteps: libraryAPI.librarySteps,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  }, [stepGroups, selectedGroupId, selectedStepId, librarySteps])
+  }, [groupsAPI.stepGroups, groupsAPI.selectedGroupId, stepsAPI.selectedStepId, libraryAPI.librarySteps])
 
   useEffect(() => {
     if (editorPanelHeight == null) return
@@ -360,284 +286,24 @@ function App() {
   }, [isResizingCols, sidebarWidth, libraryWidth])
 
   useEffect(() => {
-    if (!activeGroup) {
-      setSelectedStepId(null)
+    if (!groupsAPI.activeGroup) {
+      stepsAPI.setSelectedStepId(null)
       return
     }
-    if (!activeSteps.length) {
-      setSelectedStepId(null)
+    if (!stepsAPI.activeSteps.length) {
+      stepsAPI.setSelectedStepId(null)
       return
     }
-    if (!selectedStepId || !activeSteps.some((step) => step.id === selectedStepId)) {
-      setSelectedStepId(activeSteps[0].id)
+    if (!stepsAPI.selectedStepId || !stepsAPI.activeSteps.some((step) => step.id === stepsAPI.selectedStepId)) {
+      stepsAPI.setSelectedStepId(stepsAPI.activeSteps[0].id)
     }
-  }, [activeGroup, activeSteps, selectedStepId])
+  }, [groupsAPI.activeGroup, stepsAPI])
 
   useEffect(() => {
-    if (runScope !== 'all' && selectedStep) {
-      setScopeStepId(selectedStep.id)
+    if (pipelineAPI.runScope !== 'all' && stepsAPI.selectedStep) {
+      pipelineAPI.setScopeStepId(stepsAPI.selectedStep.id)
     }
-  }, [runScope, selectedStep])
-
-  const visibleSteps = useMemo(() => {
-    const query = stepSearch.trim().toLowerCase()
-    if (!query) return activeSteps
-    return activeSteps.filter(
-      (step) =>
-        step.title.toLowerCase().includes(query) ||
-        step.code.toLowerCase().includes(query),
-    )
-  }, [stepSearch, activeSteps])
-
-  const visibleGroups = useMemo(() => {
-    const query = groupSearch.trim().toLowerCase()
-    if (!query) return stepGroups
-    return stepGroups.filter((group) => group.title.toLowerCase().includes(query))
-  }, [groupSearch, stepGroups])
-
-  const visibleLibrarySteps = useMemo(() => {
-    const query = librarySearch.trim().toLowerCase()
-    if (!query) return librarySteps
-    return librarySteps.filter(
-      (step) =>
-        step.title.toLowerCase().includes(query) ||
-        step.code.toLowerCase().includes(query),
-    )
-  }, [librarySearch, librarySteps])
-
-  const updateActiveSteps = (updater: (prev: Step[]) => Step[]) => {
-    if (!activeGroup) return
-    setStepGroups((prev) =>
-      prev.map((group) =>
-        group.id === activeGroup.id
-          ? { ...group, steps: updater(group.steps), updatedAt: Date.now() }
-          : group,
-      ),
-    )
-  }
-
-  const addGroup = () => {
-    setStepGroups((prev) => {
-      const next = [...prev, createGroup(prev.length + 1)]
-      setSelectedGroupId(next[next.length - 1].id)
-      setSelectedStepId(null)
-      return next
-    })
-  }
-
-  const updateGroupTitle = (id: string, title: string) => {
-    setStepGroups((prev) =>
-      prev.map((group) =>
-        group.id === id ? { ...group, title, updatedAt: Date.now() } : group,
-      ),
-    )
-  }
-
-  const deleteGroup = (id: string) => {
-    setStepGroups((prev) => {
-      const next = prev.filter((group) => group.id !== id)
-      if (selectedGroupId === id) {
-        setSelectedGroupId(next[0]?.id ?? null)
-        setSelectedStepId(null)
-      }
-      return next
-    })
-  }
-
-  const addStep = () => {
-    if (!activeGroup) return
-    updateActiveSteps((prev) => {
-      const next = [...prev, createStep(prev.length + 1)]
-      setSelectedStepId(next[next.length - 1].id)
-      return next
-    })
-  }
-
-  const updateStep = (id: string, updates: Partial<Step>) => {
-    updateActiveSteps((prev) =>
-      prev.map((step) =>
-        step.id === id ? { ...step, ...updates, updatedAt: Date.now() } : step,
-      ),
-    )
-  }
-
-  const deleteStep = (id: string) => {
-    updateActiveSteps((prev) => {
-      const next = prev.filter((step) => step.id !== id)
-      if (selectedStepId === id) {
-        setSelectedStepId(next[0]?.id ?? null)
-      }
-      return next
-    })
-  }
-
-  const requestDeleteStep = (id: string) => {
-    setDeletingStepIds((prev) => ({ ...prev, [id]: true }))
-    window.setTimeout(() => {
-      deleteStep(id)
-      // Cleanup (optional) after unmount
-      window.setTimeout(() => {
-        setDeletingStepIds((prev) => {
-          const next = { ...prev }
-          delete next[id]
-          return next
-        })
-      }, 0)
-    }, 220)
-  }
-
-  const moveStep = (fromIndex: number, toIndex: number) => {
-    if (!activeGroup) return
-    updateActiveSteps((prev) => {
-      const next = [...prev]
-      if (fromIndex < 0 || fromIndex >= next.length || toIndex < 0 || toIndex >= next.length) {
-        return next
-      }
-      const [moved] = next.splice(fromIndex, 1)
-      next.splice(toIndex, 0, moved)
-      return next
-    })
-  }
-
-  const addLibraryStep = () => {
-    setLibrarySteps((prev) => [...prev, createLibraryStep(prev.length + 1)])
-  }
-
-  const updateLibraryStep = (id: string, updates: Partial<LibraryStep>) => {
-    setLibrarySteps((prev) =>
-      prev.map((step) =>
-        step.id === id ? { ...step, ...updates, updatedAt: Date.now() } : step,
-      ),
-    )
-  }
-
-  const deleteLibraryStep = (id: string) => {
-    setLibrarySteps((prev) => prev.filter((step) => step.id !== id))
-    if (selectedLibraryStepId === id) {
-      setSelectedLibraryStepId(null)
-    }
-  }
-
-  const moveLibraryStep = (fromIndex: number, toIndex: number) => {
-    setLibrarySteps((prev) => {
-      const next = [...prev]
-      if (fromIndex < 0 || fromIndex >= next.length || toIndex < 0 || toIndex >= next.length) {
-        return next
-      }
-      const [moved] = next.splice(fromIndex, 1)
-      next.splice(toIndex, 0, moved)
-      return next
-    })
-  }
-
-  const saveStepToLibrary = (stepToSave?: Step) => {
-    const target = stepToSave ?? selectedStep
-    if (!target) return
-    setLibrarySteps((prev) => [...prev, createLibraryStep(prev.length + 1, target)])
-  }
-
-  const addStepFromLibrary = (libraryStep: LibraryStep, index?: number) => {
-    if (!activeGroup) return
-    updateActiveSteps((prev) => {
-      const newStep: Step = {
-        id: crypto.randomUUID(),
-        title: libraryStep.title,
-        code: libraryStep.code,
-        muted: false,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }
-      const next = [...prev]
-      if (typeof index === 'number') {
-        next.splice(index, 0, newStep)
-      } else {
-        next.push(newStep)
-      }
-      setSelectedStepId(newStep.id)
-      return next
-    })
-  }
-
-  const resolveScopeSteps = useCallback(
-    (scope: RunScope, anchorId: string | null) => {
-      if (scope === 'all') return activeSteps
-      const anchor = anchorId ?? selectedStep?.id
-      if (!anchor) return activeSteps
-      const anchorIndex = activeSteps.findIndex((step) => step.id === anchor)
-      if (anchorIndex < 0) return activeSteps
-      if (scope === 'from') return activeSteps.slice(anchorIndex)
-      return activeSteps.slice(0, anchorIndex + 1)
-    },
-    [activeSteps, selectedStep],
-  )
-
-  const executePipeline = useCallback(
-    (scope: RunScope, anchorId: string | null) => {
-      const errors: Record<string, string> = {}
-      let current = inputText
-      const pipeline = resolveScopeSteps(scope, anchorId)
-      for (const step of pipeline) {
-        if (step.muted) continue
-        try {
-          const fn = new Function('input', 'helpers', step.code) as (
-            input: string,
-            helpers: Record<string, (value: string) => string>,
-          ) => unknown
-          const result = fn(current, helpers)
-          current = String(result ?? '')
-        } catch (error) {
-          errors[step.id] = getErrorMessage(error)
-          return { output: current, errors, failedStep: step }
-        }
-      }
-      return { output: current, errors, failedStep: null as Step | null }
-    },
-    [inputText, resolveScopeSteps],
-  )
-
-  const runPipeline = useCallback(
-    (scope = runScope, anchorId = scopeStepId) => {
-      const result = executePipeline(scope, anchorId)
-      setStepErrors(result.errors)
-      if (result.failedStep) {
-        setOutputText(
-          `Error in "${result.failedStep.title}": ${result.errors[result.failedStep.id]}`,
-        )
-      } else {
-        setOutputText(result.output)
-      }
-    },
-    [executePipeline, runScope, scopeStepId],
-  )
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      if (!activeGroup) return
-      runPipeline()
-    }, BUBBLE_DELAY)
-    return () => window.clearTimeout(timer)
-  }, [inputText, activeSteps, runScope, scopeStepId, runPipeline, activeGroup])
-
-  const handleEditorBeforeMount = useCallback((monaco: Monaco) => {
-    if (didInitMonaco.current) return
-    didInitMonaco.current = true
-    monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
-      allowJs: true,
-      allowNonTsExtensions: true,
-      target: monaco.languages.typescript.ScriptTarget.ES2020,
-    })
-    monaco.languages.typescript.javascriptDefaults.addExtraLib(
-      HELPERS_LIB,
-      'file:///helpers.d.ts',
-    )
-  }, [])
-
-  const scopeLabel =
-    runScope === 'all'
-      ? 'Running all steps'
-      : runScope === 'from'
-        ? 'Muted steps above selected'
-        : 'Muted steps below selected'
+  }, [pipelineAPI, stepsAPI.selectedStep])
 
   return (
     <DndContext
@@ -681,7 +347,7 @@ function App() {
             if (textData && textData.startsWith('REORDER:')) {
                const fromIndex = parseInt(textData.replace('REORDER:', ''), 10)
                if (!isNaN(fromIndex)) {
-                   moveStep(fromIndex, activeSteps.length - 1)
+                   stepsAPI.moveStep(fromIndex, stepsAPI.activeSteps.length - 1)
                }
                return
             }
@@ -690,7 +356,7 @@ function App() {
             if (!data) return
             try {
               const libraryStep = JSON.parse(data) as LibraryStep
-              addStepFromLibrary(libraryStep)
+              libraryAPI.addStepFromLibrary(libraryStep)
             } catch {
               // ignore
             }
@@ -698,16 +364,16 @@ function App() {
         >
           <div className="sidebar-header">
             <h2>Steps</h2>
-            <button className="primary" onClick={addStep} disabled={!activeGroup}>
+            <button className="primary" onClick={stepsAPI.addStep} disabled={!groupsAPI.activeGroup}>
               + Add Step
             </button>
           </div>
           <input
             className="search"
             placeholder="Search steps"
-            value={stepSearch}
-            onChange={(event) => setStepSearch(event.target.value)}
-            disabled={!activeGroup}
+            value={searchAPI.stepSearch}
+            onChange={(event) => searchAPI.setStepSearch(event.target.value)}
+            disabled={!groupsAPI.activeGroup}
           />
           <div
             className="step-list"
@@ -724,30 +390,30 @@ function App() {
               try {
                 const libraryStep = JSON.parse(data) as LibraryStep
                 // If dropped directly on the list (not on an item), add to end
-                addStepFromLibrary(libraryStep)
+                libraryAPI.addStepFromLibrary(libraryStep)
               } catch {
                 // ignore invalid data
               }
             }}
           >
             <SortableContext
-              items={visibleSteps.map((s) => s.id)}
+              items={searchAPI.visibleSteps.map((s) => s.id)}
               strategy={verticalListSortingStrategy}
-              disabled={!!stepSearch}
+              disabled={!!searchAPI.stepSearch}
             >
-                {visibleSteps.map((step, index) => (
+                {searchAPI.visibleSteps.map((step, index) => (
                   <SortableStepItem
                     key={step.id}
                     id={step.id}
                     step={step}
                     index={index}
                     hasActiveDrag={!!activeDragId}
-                    isSelected={step.id === selectedStep?.id}
+                    isSelected={step.id === stepsAPI.selectedStep?.id}
                     dropTargetIndex={dropTargetIndex}
-                    editingTitleStepId={editingTitleStepId}
-                    className={deletingStepIds[step.id] ? 'is-deleting' : ''}
-                    isDeleting={!!deletingStepIds[step.id]}
-                    onSelect={setSelectedStepId}
+                    editingTitleStepId={stepsAPI.editingTitleStepId}
+                    className={stepsAPI.deletingStepIds[step.id] ? 'is-deleting' : ''}
+                    isDeleting={!!stepsAPI.deletingStepIds[step.id]}
+                    onSelect={stepsAPI.setSelectedStepId}
                     onContextMenu={(e: React.MouseEvent, id: string) => {
                       setContextMenu({
                         x: e.clientX,
@@ -755,14 +421,14 @@ function App() {
                         stepId: id,
                       })
                     }}
-                    onUpdateTitle={(id: string, title: string) => updateStep(id, { title })}
-                    setEditingTitleStepId={setEditingTitleStepId}
+                    onUpdateTitle={(id: string, title: string) => stepsAPI.updateStep(id, { title })}
+                    setEditingTitleStepId={stepsAPI.setEditingTitleStepId}
                     onToggleMuted={(id: string) => {
-                      const target = activeSteps.find((s) => s.id === id)
+                      const target = stepsAPI.activeSteps.find((s) => s.id === id)
                       if (!target) return
-                      updateStep(id, { muted: !target.muted })
+                      stepsAPI.updateStep(id, { muted: !target.muted })
                     }}
-                    onDelete={requestDeleteStep}
+                    onDelete={stepsAPI.requestDeleteStep}
                     onDragOver={(event: React.DragEvent) => {
                       event.preventDefault()
                       event.stopPropagation()
@@ -784,7 +450,7 @@ function App() {
                         try {
                           const libraryStep = JSON.parse(jsonData)
                           if (libraryStep && typeof libraryStep.title === 'string') {
-                            addStepFromLibrary(libraryStep, index)
+                            libraryAPI.addStepFromLibrary(libraryStep, index)
                           }
                         } catch {
                           // ignore
@@ -794,10 +460,10 @@ function App() {
                   />
                 ))}
             </SortableContext>
-            {!activeGroup && (
+            {!groupsAPI.activeGroup && (
               <div className="empty">Create or load a group to manage steps.</div>
             )}
-            {activeGroup && !activeSteps.length && (
+            {groupsAPI.activeGroup && !stepsAPI.activeSteps.length && (
               <div className="empty">This group is empty. Add your first step.</div>
             )}
           </div>
@@ -828,7 +494,7 @@ function App() {
           }}
         >
 
-        {!activeGroup ? (
+        {!groupsAPI.activeGroup ? (
           <section className="panel group-picker">
             <div className="panel-header">
               <div>
@@ -837,23 +503,23 @@ function App() {
                   Start with a blank group or open an existing group.
                 </p>
               </div>
-              <button className="primary" onClick={addGroup}>
+              <button className="primary" onClick={groupsAPI.addGroup}>
                 +
               </button>
             </div>
             <div className="group-list">
-              {visibleGroups.map((group) => (
+              {searchAPI.visibleGroups.map((group) => (
                 <button
                   key={group.id}
                   type="button"
                   className="group-item"
-                  onClick={() => setSelectedGroupId(group.id)}
+                  onClick={() => groupsAPI.setSelectedGroupId(group.id)}
                 >
                   <span>{group.title}</span>
                   <span className="muted">{group.steps.length} steps</span>
                 </button>
               ))}
-              {!stepGroups.length && (
+              {!groupsAPI.stepGroups.length && (
                 <div className="empty">No saved groups yet.</div>
               )}
             </div>
@@ -867,19 +533,21 @@ function App() {
               <div className="panel-header">
                 <div>
                   <h2>Step Editor</h2>
-                  <p className="subtitle">{scopeLabel}</p>
+                  <p className="subtitle">{pipelineAPI.scopeLabel}</p>
                 </div>
               </div>
-              {selectedStep ? (
+              {stepsAPI.selectedStep ? (
                 <>
                   <div className="field">
                     <label htmlFor="step-title">Title</label>
                     <input
                       id="step-title"
-                      value={selectedStep.title}
-                      onChange={(event) =>
-                        updateStep(selectedStep.id, { title: event.target.value })
-                      }
+                      value={stepsAPI.selectedStep?.title ?? ''}
+                      onChange={(event) => {
+                        if (stepsAPI.selectedStep) {
+                          stepsAPI.updateStep(stepsAPI.selectedStep.id, { title: event.target.value })
+                        }
+                      }}
                     />
                   </div>
                   <div className="field">
@@ -890,10 +558,12 @@ function App() {
                         language="javascript"
                         theme="vs-light"
                         beforeMount={handleEditorBeforeMount}
-                        value={selectedStep.code}
-                        onChange={(value) =>
-                          updateStep(selectedStep.id, { code: value ?? '' })
-                        }
+                        value={stepsAPI.selectedStep?.code ?? ''}
+                        onChange={(value) => {
+                          if (stepsAPI.selectedStep) {
+                            stepsAPI.updateStep(stepsAPI.selectedStep.id, { code: value ?? '' })
+                          }
+                        }}
                         options={{
                           minimap: { enabled: false },
                           fontSize: 13,
@@ -910,10 +580,12 @@ function App() {
                     <label>
                       <input
                         type="checkbox"
-                        checked={selectedStep.muted}
-                        onChange={(event) =>
-                          updateStep(selectedStep.id, { muted: event.target.checked })
-                        }
+                        checked={stepsAPI.selectedStep?.muted ?? false}
+                        onChange={(event) => {
+                          if (stepsAPI.selectedStep) {
+                            stepsAPI.updateStep(stepsAPI.selectedStep.id, { muted: event.target.checked })
+                          }
+                        }}
                       />
                       Mute this step
                     </label>
@@ -922,7 +594,7 @@ function App() {
             <button
               type="button"
               className="ghost"
-              onClick={() => saveStepToLibrary()}
+              onClick={() => libraryAPI.saveStepToLibrary(stepsAPI.selectedStep ?? undefined)}
             >
               Save to library
             </button>
@@ -994,8 +666,8 @@ function App() {
                     language={inputLanguage}
                     theme="vs-light"
                     beforeMount={handleEditorBeforeMount}
-                    value={inputText}
-                    onChange={(value) => setInputText(value ?? '')}
+                    value={pipelineAPI.inputText}
+                    onChange={(value) => pipelineAPI.setInputText(value ?? '')}
                     options={{
                       minimap: { enabled: false },
                       fontSize: 13,
@@ -1029,14 +701,14 @@ function App() {
                 </div>
                 <div className="io-editor"
                     style={{
-                      outline: Object.keys(stepErrors).length > 0 ? 'solid 1px red' : 'none'}}
+                      outline: Object.keys(pipelineAPI.stepErrors).length > 0 ? 'solid 1px red' : 'none'}}
                 >
                   <Editor
                     height="100%"
                     language={outputLanguage}
                     theme="vs-light"
                     beforeMount={handleEditorBeforeMount}
-                    value={outputText}
+                    value={pipelineAPI.outputText}
                     options={{
                       readOnly: true,
                       minimap: { enabled: false },
@@ -1081,7 +753,7 @@ function App() {
             >
               Step Groups {isGroupsExpanded ? '▼' : '▶'}
             </h2>
-            <button className="primary" onClick={addGroup}>
+            <button className="primary" onClick={groupsAPI.addGroup}>
             +
             </button>
           </div>
@@ -1090,26 +762,26 @@ function App() {
               <input
                 className="search"
                 placeholder="Search groups"
-                value={groupSearch}
-                onChange={(event) => setGroupSearch(event.target.value)}
+                value={searchAPI.groupSearch}
+                onChange={(event) => searchAPI.setGroupSearch(event.target.value)}
               />
               <div className="group-list">
-                {visibleGroups.map((group) => (
+                {searchAPI.visibleGroups.map((group) => (
                   <div
                     key={group.id}
-                    className={`group-row ${group.id === selectedGroupId ? 'active' : ''}`}
+                    className={`group-row ${group.id === groupsAPI.selectedGroupId ? 'active' : ''}`}
                   >
                     <button
                       type="button"
                       className="group-select"
-                      onClick={() => setSelectedGroupId(group.id)}
+                      onClick={() => groupsAPI.setSelectedGroupId(group.id)}
                     >
                       {editingGroupTitleId === group.id ? (
                         <input
                           autoFocus
                           className="step-title-input"
                           value={group.title}
-                          onChange={(e) => updateGroupTitle(group.id, e.target.value)}
+                          onChange={(e) => groupsAPI.updateGroupTitle(group.id, e.target.value)}
                           onBlur={() => setEditingGroupTitleId(null)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') setEditingGroupTitleId(null)
@@ -1137,7 +809,7 @@ function App() {
                         onClick={() => {
                           const nextTitle = window.prompt('Group title', group.title)
                           if (nextTitle !== null && nextTitle.trim()) {
-                            updateGroupTitle(group.id, nextTitle.trim())
+                            groupsAPI.updateGroupTitle(group.id, nextTitle.trim())
                           }
                         }}
                       >
@@ -1146,14 +818,14 @@ function App() {
                       <button
                         type="button"
                         className="ghost danger"
-                        onClick={() => deleteGroup(group.id)}
+                        onClick={() => groupsAPI.deleteGroup(group.id)}
                       >
                         Delete
                       </button>
                     </div>
                   </div>
                 ))}
-                {!stepGroups.length && (
+                {!groupsAPI.stepGroups.length && (
                   <div className="empty">Create your first group to get started.</div>
                 )}
               </div>
@@ -1169,7 +841,7 @@ function App() {
             >
               Steps Library {isLibraryExpanded ? '▼' : '▶'}
             </h2>
-            <button className="primary" onClick={addLibraryStep}>
+            <button className="primary" onClick={libraryAPI.addLibraryStep}>
               + 
             </button>
           </div>
@@ -1178,8 +850,8 @@ function App() {
               <input
                 className="search"
                 placeholder="Search library"
-                value={librarySearch}
-                onChange={(event) => setLibrarySearch(event.target.value)}
+                value={searchAPI.librarySearch}
+                onChange={(event) => searchAPI.setLibrarySearch(event.target.value)}
               />
               <div
                 className="library-list"
@@ -1190,29 +862,29 @@ function App() {
                 }}
                 onDrop={(event) => {
                   event.preventDefault()
-                  setLibraryDropTargetIndex(null)
+                  libraryAPI.setLibraryDropTargetIndex(null)
 
                   const textData = event.dataTransfer.getData('text/plain')
                   if (textData && textData.startsWith('LIB_REORDER:')) {
                     const fromIndex = parseInt(textData.replace('LIB_REORDER:', ''), 10)
                     if (!Number.isNaN(fromIndex)) {
                       // Dropped on the list itself → move to end
-                      moveLibraryStep(fromIndex, Math.max(0, librarySteps.length - 1))
+                      libraryAPI.moveLibraryStep(fromIndex, Math.max(0, libraryAPI.librarySteps.length - 1))
                     }
                   }
                 }}
               >
-                {visibleLibrarySteps.map((step, index) => (
+                {searchAPI.visibleLibrarySteps.map((step, index) => (
                   <motion.div
                     key={step.id}
                     layout
                     transition={{ type: 'spring', stiffness: 600, damping: 45 }}
                   >
                     <div
-                      className={`library-item ${step.id === selectedLibraryStep?.id ? 'active' : ''} ${libraryDropTargetIndex === index ? 'drop-target' : ''}`}
-                      draggable={editingLibraryTitleId !== step.id}
+                      className={`library-item ${step.id === libraryAPI.selectedLibraryStep?.id ? 'active' : ''} ${libraryAPI.libraryDropTargetIndex === index ? 'drop-target' : ''}`}
+                      draggable={libraryAPI.editingLibraryTitleId !== step.id}
                       onDragStart={(event: React.DragEvent<HTMLDivElement>) => {
-                        if (editingLibraryTitleId === step.id) return
+                        if (libraryAPI.editingLibraryTitleId === step.id) return
                         event.dataTransfer.setData(
                           'application/json',
                           JSON.stringify(step),
@@ -1225,17 +897,17 @@ function App() {
                         event.preventDefault()
                         event.stopPropagation()
                         event.dataTransfer.dropEffect = 'move'
-                        setLibraryDropTargetIndex(index)
+                        libraryAPI.setLibraryDropTargetIndex(index)
                       }}
                       onDragLeave={() => {
-                        if (libraryDropTargetIndex === index) {
-                          setLibraryDropTargetIndex(null)
+                        if (libraryAPI.libraryDropTargetIndex === index) {
+                          libraryAPI.setLibraryDropTargetIndex(null)
                         }
                       }}
                       onDrop={(event: React.DragEvent<HTMLDivElement>) => {
                         event.preventDefault()
                         event.stopPropagation()
-                        setLibraryDropTargetIndex(null)
+                        libraryAPI.setLibraryDropTargetIndex(null)
 
                         const textData = event.dataTransfer.getData('text/plain')
                         if (textData && textData.startsWith('LIB_REORDER:')) {
@@ -1244,7 +916,7 @@ function App() {
                             10,
                           )
                           if (!Number.isNaN(fromIndex)) {
-                            moveLibraryStep(fromIndex, index)
+                            libraryAPI.moveLibraryStep(fromIndex, index)
                           }
                         }
                       }}
@@ -1252,19 +924,19 @@ function App() {
                     <button
                       type="button"
                       className="library-select"
-                      onClick={() => setSelectedLibraryStepId(step.id)}
+                      onClick={() => libraryAPI.setSelectedLibraryStepId(step.id)}
                     >
-                      {editingLibraryTitleId === step.id ? (
+                      {libraryAPI.editingLibraryTitleId === step.id ? (
                         <input
                           autoFocus
                           className="step-title-input"
                           value={step.title}
                           onChange={(e) =>
-                            updateLibraryStep(step.id, { title: e.target.value })
+                            libraryAPI.updateLibraryStep(step.id, { title: e.target.value })
                           }
-                          onBlur={() => setEditingLibraryTitleId(null)}
+                          onBlur={() => libraryAPI.setEditingLibraryTitleId(null)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') setEditingLibraryTitleId(null)
+                            if (e.key === 'Enter') libraryAPI.setEditingLibraryTitleId(null)
                             e.stopPropagation()
                           }}
                           onClick={(e) => e.stopPropagation()}
@@ -1274,7 +946,7 @@ function App() {
                         <span
                           onDoubleClick={(e) => {
                             e.stopPropagation()
-                            setEditingLibraryTitleId(step.id)
+                            libraryAPI.setEditingLibraryTitleId(step.id)
                           }}
                         >
                           {step.title}
@@ -1285,15 +957,15 @@ function App() {
                       <button
                         type="button"
                         className="ghost"
-                        onClick={() => addStepFromLibrary(step)}
-                        disabled={!activeGroup}
+                        onClick={() => libraryAPI.addStepFromLibrary(step)}
+                        disabled={!groupsAPI.activeGroup}
                       >
                         Add
                       </button>
                       <button
                         type="button"
                         className="ghost danger"
-                        onClick={() => deleteLibraryStep(step.id)}
+                        onClick={() => libraryAPI.deleteLibraryStep(step.id)}
                       >
                         Delete
                       </button>
@@ -1301,22 +973,24 @@ function App() {
                     </div>
                   </motion.div>
                 ))}
-                {!librarySteps.length && (
+                {!libraryAPI.librarySteps.length && (
                   <div className="empty">Save a step to build your library.</div>
                 )}
               </div>
-              {selectedLibraryStep && (
+              {libraryAPI.selectedLibraryStep && (
                 <div className="library-editor">
                   <div className="field">
                     <label htmlFor="library-title">Library title</label>
                     <input
                       id="library-title"
-                      value={selectedLibraryStep.title}
-                      onChange={(event) =>
-                        updateLibraryStep(selectedLibraryStep.id, {
-                          title: event.target.value,
-                        })
-                      }
+                      value={libraryAPI.selectedLibraryStep?.title ?? ''}
+                      onChange={(event) => {
+                        if (libraryAPI.selectedLibraryStep) {
+                          libraryAPI.updateLibraryStep(libraryAPI.selectedLibraryStep.id, {
+                            title: event.target.value,
+                          })
+                        }
+                      }}
                     />
                   </div>
                   <div className="field">
@@ -1327,12 +1001,14 @@ function App() {
                         language="javascript"
                         theme="vs-light"
                         beforeMount={handleEditorBeforeMount}
-                        value={selectedLibraryStep.code}
-                        onChange={(value) =>
-                          updateLibraryStep(selectedLibraryStep.id, {
-                            code: value ?? '',
-                          })
-                        }
+                        value={libraryAPI.selectedLibraryStep?.code ?? ''}
+                        onChange={(value) => {
+                          if (libraryAPI.selectedLibraryStep) {
+                            libraryAPI.updateLibraryStep(libraryAPI.selectedLibraryStep.id, {
+                              code: value ?? '',
+                            })
+                          }
+                        }}
                         options={{
                           minimap: { enabled: false },
                           fontSize: 13,
@@ -1357,9 +1033,9 @@ function App() {
       <DragOverlay>
         {activeDragId ? (
           <StepItem
-            step={activeSteps.find((s) => s.id === activeDragId)!}
+            step={stepsAPI.activeSteps.find((s) => s.id === activeDragId)!}
             index={-1}
-            isSelected={activeDragId === selectedStepId}
+            isSelected={activeDragId === stepsAPI.selectedStepId}
             dropTargetIndex={null}
             editingTitleStepId={null}
             onSelect={() => {}}
@@ -1386,9 +1062,9 @@ function App() {
             type="button"
             className="context-menu-item"
             onClick={() => {
-              const step = activeSteps.find((s) => s.id === contextMenu.stepId)
+              const step = stepsAPI.activeSteps.find((s) => s.id === contextMenu.stepId)
               if (step) {
-                saveStepToLibrary(step)
+                libraryAPI.saveStepToLibrary(step)
               }
               setContextMenu(null)
             }}
